@@ -948,12 +948,6 @@ private:
                 const auto dot = oldN * newN;
                 if (dot < 0.7f)
                  	return false;
-
-// WORK ON THIS: less checks please (not all tris) (maybe test segments? not much of an improvement but still...)
-
-                // //check on new face distance from original mesh
-                // if (dot < 0.95 && params.surfDistCheck && is_outside(v1->cP(), v2->cP(), mp, params))
-                //     return false;
             }
         }
 
@@ -1194,7 +1188,6 @@ private:
                         v2 = fv1;
                         crease[2] = f->IsFaceEdgeS(VtoE(pi.VInd(), (pi.VInd()+1)%3));
                     }
-                    //					v2 = (fv1 == v1) ? fv2 : fv1;
                 }
             }
     }
@@ -1307,13 +1300,21 @@ private:
     }
 
 
+    static bool canMoveVertex(const VertexPointer vp, const CoordType & pos, const Params & params) 
+    {
+        std::vector<VertexType*> incident;
+        vcg::face::VVStarVF<FaceType>(vp, incident);
+
+        return std::none_of(std::execution::par, incident.begin(), incident.end(),  [&](const auto vp) {
+            return is_outside(vp->cP(), pos, params);
+        });
+    }
 
 
     static void FoldRelax(MeshType &m, Params params, const int step, const bool strict = true)
     {
         typename vcg::tri::Smooth<MeshType>::LaplacianInfo lpz(CoordType(0, 0, 0), 0);
         SimpleTempData<typename MeshType::VertContainer, typename vcg::tri::Smooth<MeshType>::LaplacianInfo> TD(m.vert, lpz);
-        const ScalarType maxDist = (strict) ? params.maxSurfDist / 1000. : params.maxSurfDist;
         for (int i = 0; i < step; ++i)
         {
             TD.Init(lpz);
@@ -1321,28 +1322,14 @@ private:
 
             for (auto fi = m.face.begin(); fi != m.face.end(); ++fi)
             {
-                std::vector<CoordType> newPos(4);
-                bool moving = false;
-
                 for (int j = 0; j < 3; ++j)
                 {
-                    newPos[j] = fi->cP(j);
-                    if (!fi->V(j)->IsD() && TD[fi->V(j)].cnt > 0)
+                    if (!fi->V(j)->IsD() && fi->V(j)->IsS() && TD[fi->V(j)].cnt > 0)
                     {
-                        if (fi->V(j)->IsS())
-                        {
-                            newPos[j] = (fi->V(j)->P() + TD[fi->V(j)].sum) / (TD[fi->V(j)].cnt + 1);
-                            moving = true;
-                        }
-                    }
-                }
+                        const auto newPos = (fi->V(j)->P() + TD[fi->V(j)].sum) / (TD[fi->V(j)].cnt + 1);
 
-                if (moving)
-                {
-                    if ((!params.surfDistCheck || !is_outside(newPos[0], newPos[1], newPos[2], params)))
-                    {
-                        for (int j = 0; j < 3; ++j)
-                            fi->V(j)->P() = newPos[j];
+                        if (canMoveVertex(fi->V(j), newPos, params))
+                            fi->V(j)->P() = newPos;
                     }
                 }
             }
@@ -1365,41 +1352,18 @@ private:
                         TD[*vi].sum = ((*vi).P() + TD[*vi].sum) / (TD[*vi].cnt + 1);
                 }
 
-//            for (auto fi = m.face.begin(); fi != m.face.end(); ++fi)
-//            {
-//                if (!(*fi).IsD())
-//                {
-//                    for (int j = 0; j < 3; ++j)
-//                    {
-//                        if (Angle(Normal(TD[(*fi).V0(j)].sum, (*fi).P1(j), (*fi).P2(j)),
-//                                  Normal((*fi).P0(j), (*fi).P1(j), (*fi).P2(j))) > M_PI/2.)
-//                            TD[(*fi).V0(j)].sum = (*fi).P0(j);
-//                    }
-//                }
-//            }
-//            for (auto fi = m.face.begin(); fi != m.face.end(); ++fi)
-//            {
-//                if (!(*fi).IsD())
-//                {
-//                    for (int j = 0; j < 3; ++j)
-//                    {
-//                        if (Angle(Normal(TD[(*fi).V0(j)].sum, TD[(*fi).V1(j)].sum, (*fi).P2(j)),
-//                                  Normal((*fi).P0(j), (*fi).P1(j), (*fi).P2(j))) > M_PI/2.)
-//                        {
-//                            TD[(*fi).V0(j)].sum = (*fi).P0(j);
-//                            TD[(*fi).V1(j)].sum = (*fi).P1(j);
-//                        }
-//                    }
-//                }
-//            }
 
             for (auto vi = m.vert.begin(); vi != m.vert.end(); ++vi)
-                if (!(*vi).IsD() && TD[*vi].cnt > 0)
+                if (!(*vi).IsD() && (*vi).IsS() && TD[*vi].cnt > 0)
                 {
-                    std::vector<CoordType> newPos(1, TD[*vi].sum);
-                    if ((*vi).IsS() && !is_outside(newPos[0], params))
-                        (*vi).P() = (*vi).P() * (1-delta) + TD[*vi].sum * (delta);
+                    auto newPos = (*vi).P() * (1-delta) + TD[*vi].sum * (delta);
+
+                    if (canMoveVertex(&(*vi), newPos, params)) {
+                        (*vi).P() = newPos;
+                    }
                 }
+
+            
         } // end step
     }
 
@@ -1421,6 +1385,7 @@ private:
             ss.push();
         }
         tri::UpdateTopology<MeshType>::FaceFace(m);
+        tri::UpdateTopology<MeshType>::VertexFace(m);
         tri::UpdateFlags<MeshType>::VertexBorderFromFaceAdj(m);
         tri::UpdateSelection<MeshType>::VertexFromBorderFlag(m);
         selectVertexFromCrease(m, params.creaseAngleCosThr);
