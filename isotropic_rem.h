@@ -260,9 +260,7 @@ private:
         vcg::tri::Clean<MeshType>::RemoveUnreferencedVertex(m);
         vcg::tri::Allocator<MeshType>::CompactEveryVector(m);
 
-        // vcg::tri::UpdateTopology<MeshType>::FaceFace(m);
         removeColinearFaces(m, params);
-        // vcg::tri::UpdateTopology<MeshType>::FaceFace(m);
     }
 
     typedef Eigen::Matrix<double, 3, 1> Vector3;
@@ -428,7 +426,6 @@ public:
             const double qualityAdj = vcg::QualityRadii(ffAdj->cP(0), ffAdj->cP(1), ffAdj->cP(2));
 
             const bool qualityCheck = quality > 0.00000001 && qualityAdj > 0.00000001;
-            //				bool areaCheck    = vcg::DoubleArea(*ff) > 0.000001 && vcg::DoubleArea(*ffAdj) > 0.000001;
 
             if ((forceTag || !params.userSelectedCreases) && (testCreaseEdge(p, params.creaseAngleCosThr) /*&& areaCheck*/ /* && qualityCheck*/) || p.IsBorder())
             {
@@ -441,7 +438,7 @@ public:
                 {
                     faces.push_back(pp.F());
                     edges.push_back(pp.E());
-                    //                        pp.F()->SetFaceEdgeS(pp.E());
+
                     if (vcg::QualityRadii(pp.F()->cP(0), pp.F()->cP(1), pp.F()->cP(2)) <= 0.0001)
                     {
                         allOk = false;
@@ -953,9 +950,7 @@ private:
 
         return true;
     }
-// 187k
 
-    //TODO: Refactor code and implement the correct set up of crease info when collapsing towards a crease edge
     static bool checkCollapseFacesAroundVert1(const PosType &p, VertexPair & pair, Point3<ScalarType> &mp, Params &params, bool relaxed)
     {
         PosType p0 = p, p1 = p;
